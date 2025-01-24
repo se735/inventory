@@ -44,7 +44,7 @@ const char *numbers[101];
 static void update_inventory(GtkWidget* widget, char **data){
   char *query_template = "UPDATE products set";
   size_t query_size = snprintf(NULL, 0, "%s %s = %s WHERE barcode = %s", query_template, data[1], gtk_editable_get_text(GTK_EDITABLE(widget)), data[0]);
-  char *query = malloc((sizeof(char) * query_size) + 1);
+  char query[100]; 
   sprintf(query, "%s %s = %s WHERE barcode = %s", query_template, data[1], gtk_editable_get_text(GTK_EDITABLE(widget)), data[0]);
   g_print("soy godddd: %s\n", query);
   rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL); 
@@ -87,10 +87,8 @@ static void sql_inventory_product(GtkWidget *inventory_brand, GtkWidget *invento
   GtkWidget *price_label = gtk_editable_label_new(price_sql);
   gtk_box_append(GTK_BOX(inventory_product_box), price_label);
 
-  char **price_data = malloc(sizeof(char *) * 2);
-  price_data[0] = malloc(( sizeof(char) * strlen(barcode_sql) ) + 1);
+  char price_data[2][100];
   strcpy(price_data[0], barcode_sql);
-  price_data[1] = malloc(( sizeof(char) * strlen("price") ) + 1);
   strcpy(price_data[1], "price");
 
   g_signal_connect(price_label, "changed", G_CALLBACK(update_inventory), price_data);
@@ -99,10 +97,8 @@ static void sql_inventory_product(GtkWidget *inventory_brand, GtkWidget *invento
   GtkWidget *quantity_label = gtk_editable_label_new(quantity_sql);
   gtk_box_append(GTK_BOX(inventory_product_box), quantity_label);
 
-  char **quantity_data = malloc(sizeof(char *) * 2);
-  quantity_data[0] = malloc(( sizeof(char) * strlen(barcode_sql) ) + 1);
+  char quantity_data[2][100];
   strcpy(quantity_data[0], barcode_sql);
-  quantity_data[1] = malloc(( sizeof(char) * strlen("quantity") ) + 1);
   strcpy(quantity_data[1], "quantity");
 
   g_signal_connect(quantity_label, "changed", G_CALLBACK(update_inventory), quantity_data);
@@ -146,8 +142,7 @@ static void sql_inventory(){
         sql_inventory_product(inventory_brand, inventory_products_box);
         continue; 
       }
-      size_t len_brand = strlen(brand_sql);
-      char *brand = (char *)malloc(( len_brand * sizeof(char) ) + (len_pango_markup2 * sizeof(char)) + (len_pango_markup_end * sizeof(char)) + 1);
+      char brand[100];
       sprintf(brand, "%s%s%s", pango_markup2, brand_sql, pango_markup_end);
       inventory_brand = gtk_expander_new_with_mnemonic(brand);
       gtk_expander_set_use_markup(GTK_EXPANDER(inventory_brand), TRUE);
@@ -175,7 +170,7 @@ static void sql_inventory(){
     type_sql_temp = malloc(( strlen(type_sql) * sizeof(char) ) + 1);
     strcpy(type_sql_temp, type_sql);
     size_t len_type = strlen(type_sql);
-    char *type = (char *)malloc(( len_type * sizeof(char) ) + (len_pango_markup * sizeof(char)) + (len_pango_markup_end * sizeof(char)) + 1);
+    char type[100];
     sprintf(type, "%s%s%s", pango_markup, type_sql, pango_markup_end);
     GtkWidget *inventory_type = gtk_expander_new_with_mnemonic(type);
     gtk_expander_set_use_markup(GTK_EXPANDER(inventory_type), TRUE);
@@ -184,7 +179,7 @@ static void sql_inventory(){
     brand_sql_temp = malloc(( strlen(brand_sql) * sizeof(char) ) + 1);
     strcpy(brand_sql_temp, brand_sql);
     size_t len_brand = strlen(brand_sql);
-    char *brand = (char *)malloc(( len_brand * sizeof(char) ) + (len_pango_markup2 * sizeof(char)) + (len_pango_markup_end * sizeof(char)) + 1);
+    char brand[100];
     sprintf(brand, "%s%s%s", pango_markup2, brand_sql, pango_markup_end);
     inventory_brand = gtk_expander_new_with_mnemonic(brand);
     gtk_expander_set_use_markup(GTK_EXPANDER(inventory_brand), TRUE);
@@ -196,8 +191,6 @@ static void sql_inventory(){
     inventory_products_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1);
     sql_inventory_product(inventory_brand, inventory_products_box);
     
-    free(type);
-    free(brand);
   }
 
   if (rc != SQLITE_DONE) {
@@ -231,7 +224,7 @@ static char* sql_query(const char *barcode, char *sql){
   char *query_template = "SELECT "; 
   char *query_template2 = " FROM products WHERE barcode = ";
   int query_len = snprintf(NULL, 0, "%s%s%s%s;", query_template, sql, query_template2, barcode);
-  char *query = malloc(query_len * sizeof(char) + 1);
+  char query[100];
   sprintf(query, "%s%s%s%s;", query_template, sql, query_template2, barcode);
 
   rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
@@ -252,7 +245,6 @@ static char* sql_query(const char *barcode, char *sql){
     result = (char *)malloc(( length * sizeof(char) ) + 1);
     strcpy(result, col_value);
   }
-  free(query);
 
   if (rc != SQLITE_DONE) {
     fprintf(stderr, "Error fetching rows: %s\n", sqlite3_errmsg(db));
@@ -272,10 +264,9 @@ static void total_price(){
     return; 
   }
 
-  char *total_str = malloc(( digits + 1 ) + ( strlen(price_total_default) * sizeof(char)));
+  char total_str[100];
   sprintf(total_str, "%s%d", price_total_default, total);
   gtk_label_set_text(GTK_LABEL(price_total), total_str);
-  free(total_str);
 }
 
 static void sql_sell(GtkWidget *widget, gpointer data){
@@ -288,16 +279,15 @@ static void sql_sell(GtkWidget *widget, gpointer data){
     if (digits < 0) {
       return; 
     }
-    char *quantity_str = malloc(digits + 1);
+    char quantity_str[100];
     snprintf(quantity_str, digits + 1, "%d", quantity);
 
     char *query_template = "UPDATE products SET quantity =";
     char *query_template2 = "WHERE barcode =";
     const char* barcode = ptr->barcode;
-    char *query = malloc(( strlen(query_template) * sizeof(char) ) + (strlen(query_template2) * sizeof(char)) + (strlen(quantity_str) * sizeof(char)) + ( strlen(barcode) * sizeof(char)));
+    char query[200];
     sprintf(query, "%s %s %s %s", query_template, quantity_str, query_template2, barcode); 
     rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL); 
-    free(quantity_str);
 
     if (rc != SQLITE_OK) {
       fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
@@ -311,7 +301,6 @@ static void sql_sell(GtkWidget *widget, gpointer data){
     else {
       printf("Update succesfully\n");
     }
-    free(query);
     gtk_label_set_text(GTK_LABEL(price_total), "Total: ");
   }
 }
@@ -426,13 +415,13 @@ static void add_scan(GtkWidget *widget, gpointer data)
   size_t length_type = strlen(type); 
   size_t length_price = strlen(price); 
 
-  char *label = malloc(( length_brand * sizeof(char) ) + (length_name * sizeof(char)) + (length_type * sizeof(char)) + (length_price * sizeof(char)) + 4);
+  char label[100];
   sprintf(label, "%s %s %s\t$%s", type, brand, name, price);
 
   const char *quantity_dropdown[quantity];
   for (int i = 0; i < quantity; i++) {
     int len = snprintf(NULL, 0, "%d", i);
-    char *str = malloc(len * sizeof(char) + 1);
+    char str[100];
     sprintf(str, "%d", i + 1);
     quantity_dropdown[i] = str;
   }
@@ -452,7 +441,6 @@ static void add_scan(GtkWidget *widget, gpointer data)
   n->next = scanner_list;
   scanner_list = n;
 
-  free(label);
 
   if (n->next == NULL) {
     gtk_grid_attach(GTK_GRID(scanner_grid), n->scan_label, 1, 1, 1, 1);
