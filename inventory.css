@@ -1,3 +1,7 @@
-.gtk-expander .gtk-expander-label {
-  font-size: 100px;
-}
+/* .gtk-expander .gtk-expander-label { */
+/*   font-size: 100px; */
+/* } */
+
+*{
+  font-size: 25px;
+ }

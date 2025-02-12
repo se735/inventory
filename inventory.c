@@ -11,6 +11,7 @@
 #include <sqlite3.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 typedef struct node{
   const char *barcode;
@@ -18,7 +19,10 @@ typedef struct node{
   const char *price;
   const char *type;
   const char *brand;
+  const char *id;
   int quantity;
+  int total;
+  int quantity_sold;
   GtkWidget *scan_label;
   GtkWidget *scan_dropdown;
   const char **quantity_dropdown;
@@ -30,6 +34,8 @@ node *scanner_list = NULL;
 GtkWidget *scanner_grid;
 GtkWidget *price_total;
 char *price_total_default = "Total: $";
+int scanner_list_n_of_products = 0;
+int total_price = 0;
 
 GtkWidget *inventory_grid;
 GtkWidget *inventory_box;
@@ -39,19 +45,66 @@ const char *errMsg = 0;
 sqlite3_stmt *stmt;
 int rc; 
 
-const char *numbers[101];
 
-static void update_inventory(GtkWidget* widget, char **data){
+static char* sql_query(const char *barcode, const char *sql){
+  char *query = sqlite3_mprintf("SELECT %s FROM products WHERE barcode = ?", sql);
+  rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
+    return NULL;
+  }
+
+  rc = sqlite3_bind_text(stmt, 1, barcode, -1, SQLITE_TRANSIENT);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+    return NULL;
+  }
+
+  char *result = NULL; 
+
+  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+    // Get column count
+    int col_count = sqlite3_column_count(stmt);
+    // Print each column
+    const char *col_name = sqlite3_column_name(stmt, 0);
+    const char *col_value = (const char*)sqlite3_column_text(stmt, 0);
+    size_t length = strlen(col_value); 
+    result = (char *)malloc(( length * sizeof(char) ) + 1);
+    strcpy(result, col_value);
+  }
+
+  if (rc != SQLITE_DONE) {
+    fprintf(stderr, "Error fetching rows: %s\n", sqlite3_errmsg(db));
+  }
+
+  sqlite3_finalize(stmt);
+
+  free(query);
+  return result;
+}
+
+static void update_inventory(GtkWidget* widget, char *type){
   char *query_template = "UPDATE products set";
-  size_t query_size = snprintf(NULL, 0, "%s %s = %s WHERE barcode = %s", query_template, data[1], gtk_editable_get_text(GTK_EDITABLE(widget)), data[0]);
-  char query[100]; 
-  sprintf(query, "%s %s = %s WHERE barcode = %s", query_template, data[1], gtk_editable_get_text(GTK_EDITABLE(widget)), data[0]);
-  g_print("soy godddd: %s\n", query);
-  rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL); 
+  GtkWidget *parent = gtk_widget_get_parent(widget); 
+  GtkWidget *barcode_child = gtk_widget_get_first_child(parent);
+  const char *barcode = gtk_label_get_text(GTK_LABEL(barcode_child));
+  
+  char *query = sqlite3_mprintf("UPDATE products set %s = ? WHERE barcode = ?", type);
 
+  rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL); 
   if (rc != SQLITE_OK) {
     fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
     return;
+  }
+
+  rc = sqlite3_bind_text(stmt, 1, gtk_editable_get_text(GTK_EDITABLE(widget)), -1, SQLITE_TRANSIENT);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc = sqlite3_bind_text(stmt, 2, barcode, -1, SQLITE_TRANSIENT);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
   }
 
   rc = sqlite3_step(stmt);
@@ -61,6 +114,7 @@ static void update_inventory(GtkWidget* widget, char **data){
   else {
     printf("Update succesfully\n");
   }
+  free(query);
 }
 
 static void sql_inventory_product(GtkWidget *inventory_brand, GtkWidget *inventory_products_box){
@@ -87,25 +141,18 @@ static void sql_inventory_product(GtkWidget *inventory_brand, GtkWidget *invento
   GtkWidget *price_label = gtk_editable_label_new(price_sql);
   gtk_box_append(GTK_BOX(inventory_product_box), price_label);
 
-  char price_data[2][100];
-  strcpy(price_data[0], barcode_sql);
-  strcpy(price_data[1], "price");
-
-  g_signal_connect(price_label, "changed", G_CALLBACK(update_inventory), price_data);
+  g_signal_connect(price_label, "changed", G_CALLBACK(update_inventory), "price");
 
   const char *quantity_sql = (const char*)sqlite3_column_text(stmt, 4);
   GtkWidget *quantity_label = gtk_editable_label_new(quantity_sql);
   gtk_box_append(GTK_BOX(inventory_product_box), quantity_label);
 
-  char quantity_data[2][100];
-  strcpy(quantity_data[0], barcode_sql);
-  strcpy(quantity_data[1], "quantity");
 
-  g_signal_connect(quantity_label, "changed", G_CALLBACK(update_inventory), quantity_data);
+  g_signal_connect(quantity_label, "changed", G_CALLBACK(update_inventory), "quantity");
 }
 
 static void sql_inventory(){
-  char *query = "SELECT type, brand, name, barcode, quantity, price FROM products ORDER BY type;";
+  char *query = "SELECT type, brand, name, barcode, quantity, price FROM products ORDER BY type, brand;";
 
   rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
@@ -127,28 +174,17 @@ static void sql_inventory(){
   GtkWidget *inventory_products_box; 
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     i++;
-    g_print("numberrrr: %d\n", i);
     int col_count = sqlite3_column_count(stmt);
     
-    char *pango_markup = "<span size=\"20pt\">";
-    char *pango_markup2 = "<span size=\"15pt\">";
-    char *pango_markup_end = "</span>";
-    size_t len_pango_markup = strlen(pango_markup);
-    size_t len_pango_markup2 = strlen(pango_markup2);
-    size_t len_pango_markup_end = strlen(pango_markup_end);
 
     if (type_sql != NULL && type_sql_temp != NULL && strcmp(type_sql, type_sql_temp) == 0) {
       if (strcmp(brand_sql, brand_sql_temp) == 0) {
         sql_inventory_product(inventory_brand, inventory_products_box);
         continue; 
       }
-      char brand[100];
-      sprintf(brand, "%s%s%s", pango_markup2, brand_sql, pango_markup_end);
-      inventory_brand = gtk_expander_new_with_mnemonic(brand);
+      inventory_brand = gtk_expander_new_with_mnemonic(brand_sql);
       gtk_expander_set_use_markup(GTK_EXPANDER(inventory_brand), TRUE);
       gtk_box_append(GTK_BOX(inventory_brand_box), inventory_brand);
-      g_print("brand_sql_temp: %s\n", brand_sql_temp);
-      g_print("brand_sql: %s\n", brand_sql);
 
       free(brand_sql_temp);
       brand_sql_temp = malloc(( strlen(brand_sql) * sizeof(char) ) + 1);
@@ -167,21 +203,16 @@ static void sql_inventory(){
     }
 
     type_sql = (const char*)sqlite3_column_text(stmt, 0);
-    type_sql_temp = malloc(( strlen(type_sql) * sizeof(char) ) + 1);
+    type_sql_temp = malloc((strlen(type_sql) + 1) * sizeof(char));
     strcpy(type_sql_temp, type_sql);
-    size_t len_type = strlen(type_sql);
-    char type[100];
-    sprintf(type, "%s%s%s", pango_markup, type_sql, pango_markup_end);
-    GtkWidget *inventory_type = gtk_expander_new_with_mnemonic(type);
+    GtkWidget *inventory_type = gtk_expander_new_with_mnemonic(type_sql);
     gtk_expander_set_use_markup(GTK_EXPANDER(inventory_type), TRUE);
 
     brand_sql = (const char*)sqlite3_column_text(stmt, 1);
     brand_sql_temp = malloc(( strlen(brand_sql) * sizeof(char) ) + 1);
     strcpy(brand_sql_temp, brand_sql);
-    size_t len_brand = strlen(brand_sql);
-    char brand[100];
-    sprintf(brand, "%s%s%s", pango_markup2, brand_sql, pango_markup_end);
-    inventory_brand = gtk_expander_new_with_mnemonic(brand);
+
+    inventory_brand = gtk_expander_new_with_mnemonic(brand_sql);
     gtk_expander_set_use_markup(GTK_EXPANDER(inventory_brand), TRUE);
 
     gtk_box_append(GTK_BOX(inventory_box), inventory_type);
@@ -211,7 +242,6 @@ static char* sql_query_example(){
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     const char *col_name = sqlite3_column_name(stmt, 1);
     const char *col_value = (const char*)sqlite3_column_text(stmt, 1);
-    printf("%s = %s\n", col_name, col_value);
   }
 
   if (rc != SQLITE_DONE) {
@@ -220,89 +250,197 @@ static char* sql_query_example(){
   return result;
 }
 
-static char* sql_query(const char *barcode, char *sql){
-  char *query_template = "SELECT "; 
-  char *query_template2 = " FROM products WHERE barcode = ";
-  int query_len = snprintf(NULL, 0, "%s%s%s%s;", query_template, sql, query_template2, barcode);
-  char query[100];
-  sprintf(query, "%s%s%s%s;", query_template, sql, query_template2, barcode);
+
+static int calc_total_price(){
+  total_price = 0;
+  for (node *ptr = scanner_list; ptr != NULL; ptr = ptr->next) {
+    GtkStringObject *item = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(ptr->scan_dropdown));
+    const char* item_value = gtk_string_object_get_string(item);
+    int product_total = (atoi(ptr->price) * atoi(item_value));
+    ptr->total = product_total;
+    total_price += product_total;
+  }
+
+  char total_str[50];
+  sprintf(total_str, "%s%d", price_total_default, total_price);
+  gtk_label_set_text(GTK_LABEL(price_total), total_str);
+  return total_price;
+}
+
+static void sql_sell_update_products(const char *id, int quantity){
+  char *query = "UPDATE products SET quantity = ? WHERE id = ?";
+
+  rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL); 
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
+    return;
+  }
+
+  rc = sqlite3_bind_int(stmt, 1, quantity);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc = sqlite3_bind_text(stmt, 2, id, -1, SQLITE_TRANSIENT);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc = sqlite3_step(stmt);
+  if (rc != SQLITE_DONE) {
+    fprintf(stderr, "Failed to update data: %s\n", sqlite3_errmsg(db)); 
+  }
+  else {
+    printf("Update succesfully\n");
+  }
+
+  sqlite3_finalize(stmt);
+}
+
+static void receipt_print(struct tm *date){
+  char receipt[1000];
+  sprintf(receipt, 
+    "\tCabellos risos\n" 
+    "--------------------------\n" 
+    "Fecha: %d-%d-%d\n"
+    "Hora: %d:%d\n"  
+    "--------------------------\n", date->tm_year, date->tm_mon, date->tm_mday, date->tm_hour, date->tm_min
+  );
+
+  for (node *ptr = scanner_list; ptr != NULL; ptr = ptr->next) {
+    sprintf(receipt + strlen(receipt),     
+      "%s %s\n%s(%d): $%d\n", ptr->type, ptr->brand, ptr->name, ptr->quantity_sold, ptr->total
+    );
+  }
+
+  int net_price = total_price / 1.19;
+  sprintf(receipt + strlen(receipt), 
+    "---------------------------\n"    
+    "Precio Neto: $%d\n"
+    "IVA(19%%): $%d\n"
+    "Precio Total: $%d", net_price, total_price - net_price, total_price  
+  );
+
+  FILE *fp = popen("lpr", "w");
+  if (fp == NULL) {
+    perror("failed to run lpr"); 
+  }
+  fprintf(fp, "%s", receipt);
+  g_print("we dit itttttt\n");
+  fclose(fp);
+}
+
+static struct tm *current_time(){
+  time_t t = time(NULL);
+  struct tm *cur_time = localtime(&t);
+  cur_time->tm_year += 1900;
+  cur_time->tm_mon += 1;
+  return cur_time;
+}
+
+static int sql_sell_insert_sales(struct tm *cur_time){
+  char *query = "INSERT INTO sales (year, month, day, time, total_price, weekday) VALUES (?, ?, ?, ?, ?, ?)";
 
   rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
     fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
-    return NULL;
+    return 1;
   }
 
-  char *result; 
-  g_print("fuck you\n");
-  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-    // Get column count
-    int col_count = sqlite3_column_count(stmt);
-    // Print each column
-    const char *col_name = sqlite3_column_name(stmt, 0);
-    const char *col_value = (const char*)sqlite3_column_text(stmt, 0);
-    size_t length = strlen(col_value); 
-    result = (char *)malloc(( length * sizeof(char) ) + 1);
-    strcpy(result, col_value);
+  char time[20];
+  sprintf(time, "%d:%d", cur_time->tm_hour, cur_time->tm_min);
+
+  rc = sqlite3_bind_int(stmt, 1, cur_time->tm_year);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+  rc = sqlite3_bind_int(stmt, 2, cur_time->tm_mon);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+  rc = sqlite3_bind_int(stmt, 3, cur_time->tm_mday);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+  rc = sqlite3_bind_text(stmt, 4, time, -1, SQLITE_TRANSIENT);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+  rc = sqlite3_bind_int(stmt, 5, total_price);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+  rc = sqlite3_bind_int(stmt, 6, cur_time->tm_wday);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
   }
 
+  rc = sqlite3_step(stmt);
   if (rc != SQLITE_DONE) {
-    fprintf(stderr, "Error fetching rows: %s\n", sqlite3_errmsg(db));
+    fprintf(stderr, "Failed to update data: %s\n", sqlite3_errmsg(db)); 
   }
-  return result;
+  else {
+    printf("Update succesfully\n");
+  }
+
+  int id = sqlite3_last_insert_rowid(db);
+  sqlite3_finalize(stmt);
+  return id;
 }
 
-static void total_price(){
-  int total = 0;
-  for (node *ptr = scanner_list; ptr != NULL; ptr = ptr->next) {
-    GtkStringObject *item = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(ptr->scan_dropdown));
-    const char* item_value = gtk_string_object_get_string(item);
-    total += (atoi(ptr->price) * atoi(item_value));
-  }
-  int digits = snprintf(NULL, 0, "%d", total);
-  if (digits < 0) {
-    return; 
+static void sql_sell_insert_sales_items(const char *product_id, int sale_id, int quantity, int unit_price){
+  char * query = "INSERT INTO sales_items (product_id, sale_id, quantity, unit_price) VALUES (?, ?, ?, ?)";
+
+  rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
+    return;
   }
 
-  char total_str[100];
-  sprintf(total_str, "%s%d", price_total_default, total);
-  gtk_label_set_text(GTK_LABEL(price_total), total_str);
+  rc = sqlite3_bind_int(stmt, 1, atoi(product_id));
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+  rc = sqlite3_bind_int(stmt, 2, sale_id);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+  rc = sqlite3_bind_int(stmt, 3, quantity);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+  rc = sqlite3_bind_int(stmt, 4, unit_price);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc = sqlite3_step(stmt);
+  if (rc != SQLITE_DONE) {
+    fprintf(stderr, "Failed to update data: %s\n", sqlite3_errmsg(db)); 
+  }
+  else {
+    printf("Update succesfully\n");
+  }
+
+  sqlite3_finalize(stmt);
 }
 
 static void sql_sell(GtkWidget *widget, gpointer data){
+  struct tm *cur_time = current_time();
+  int sales_id = sql_sell_insert_sales(cur_time);
   for (node *ptr = scanner_list; ptr != NULL; ptr = ptr->next) {
-    GtkStringObject *item = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(ptr->scan_dropdown));
-    const char* item_value = gtk_string_object_get_string(item);
-    int quantity = ptr->quantity - atoi(item_value);
-    g_print("quant: %d", quantity);
-    int digits = snprintf(NULL, 0, "%d", quantity);
-    if (digits < 0) {
-      return; 
-    }
-    char quantity_str[100];
-    snprintf(quantity_str, digits + 1, "%d", quantity);
+    GtkStringObject *item_quantity = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(ptr->scan_dropdown));
+    const char* item_quantity_value = gtk_string_object_get_string(item_quantity);
 
-    char *query_template = "UPDATE products SET quantity =";
-    char *query_template2 = "WHERE barcode =";
-    const char* barcode = ptr->barcode;
-    char query[200];
-    sprintf(query, "%s %s %s %s", query_template, quantity_str, query_template2, barcode); 
-    rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL); 
+    ptr->quantity_sold = atoi(item_quantity_value);
+    int updated_quantity = ptr->quantity - ptr->quantity_sold;
+    int unit_price = atoi(ptr->price);
 
-    if (rc != SQLITE_OK) {
-      fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
-      return;
-    }
-
-    rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
-      fprintf(stderr, "Failed to update data: %s\n", sqlite3_errmsg(db)); 
-    }
-    else {
-      printf("Update succesfully\n");
-    }
-    gtk_label_set_text(GTK_LABEL(price_total), "Total: ");
+    sql_sell_update_products(ptr->id, updated_quantity);
+    sql_sell_insert_sales_items(ptr->id, sales_id, ptr->quantity_sold, unit_price);
   }
+  receipt_print(cur_time);
+  gtk_label_set_text(GTK_LABEL(price_total), "Total: ");
 }
 
 static void print_dropdown(GtkWidget *widget, gpointer data){
@@ -319,6 +457,7 @@ static void free_scanner(GtkWidget *scanner_entry){
     free((void *)ptr->brand);
     free((void *)ptr->type);
     free((void *)ptr->price);
+    free((void *)ptr->id);
 
     scanner_list = scanner_list->next; 
     free(ptr);
@@ -346,6 +485,7 @@ static void remove_scan(GtkWidget *widget){
     else {
       scanner_list = ptr->next;  
     }
+    calc_total_price();
     free(ptr);
     return;
   }
@@ -363,15 +503,16 @@ static void remove_scan(GtkWidget *widget){
       }
       node *temp = ptr->next;
       ptr->next = ptr->next->next;
+      free((void *)temp->name);
+      free((void *)temp->brand);
+      free((void *)temp->type);
+      free((void *)temp->price);
       free(temp);
+      calc_total_price();
       return;
     } 
     ptr = ptr->next;
   }
-}
-
-static void print_lol(){
-  g_print("lolllll it workssss");
 }
 
 static void add_scan(GtkWidget *widget, gpointer data)
@@ -381,57 +522,55 @@ static void add_scan(GtkWidget *widget, gpointer data)
   gtk_entry_buffer_set_text(scanner_entry_buffer, "", 0);
 
   char *sql_quantity = sql_query(scan, "quantity");
-  g_print("%s",sql_quantity);
-  if (sql_quantity == NULL) {
+  if (sql_quantity == NULL || atoi(sql_quantity) == 0) {
     return; 
   }
+
   int quantity = atoi(sql_quantity);
 
   if (scanner_list != NULL ) {   
     for (node *ptr = scanner_list; ptr != NULL; ptr = ptr->next) {
       if (strcmp(ptr->barcode, scan) == 0) {
-        GtkStringObject *item = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(ptr->scan_dropdown));
-        const char* item_value = gtk_string_object_get_string(item);
+        GtkStringObject *selected_quantity = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(ptr->scan_dropdown));
+        const char* selected_quantity_value = gtk_string_object_get_string(selected_quantity);
 
-        if (atoi(item_value) == quantity) {
+        if (atoi(selected_quantity_value) == quantity) {
           return; 
         }
-        guint n = atoi(item_value);
+        guint n = atoi(selected_quantity_value);
         gtk_drop_down_set_selected(GTK_DROP_DOWN(ptr->scan_dropdown), n);
-        total_price();
+        calc_total_price();
         return;
       }
     }
   }
+  scanner_list_n_of_products++;
 
   const char *name = (const char *)sql_query(scan, "name");
-  const char *brand = (const char *)sql_query(scan, "brand");
-  const char *type = (const char *)sql_query(scan, "type");
-  const char *price = (const char *)sql_query(scan, "price");
-
-
-  size_t length_brand = strlen(brand); 
-  size_t length_name = strlen(name); 
-  size_t length_type = strlen(type); 
-  size_t length_price = strlen(price); 
+  if (name == NULL) {
+    return; 
+  }
+  const char *brand = sql_query(scan, "brand");
+  const char *type = sql_query(scan, "type");
+  const char *price = sql_query(scan, "price");
+  const char *id = sql_query(scan, "id");
 
   char label[100];
   sprintf(label, "%s %s %s\t$%s", type, brand, name, price);
 
-  const char *quantity_dropdown[quantity];
+  const char* quantity_dropdown[quantity + 1];
   for (int i = 0; i < quantity; i++) {
-    int len = snprintf(NULL, 0, "%d", i);
-    char str[100];
-    sprintf(str, "%d", i + 1);
-    quantity_dropdown[i] = str;
+    quantity_dropdown[i] = malloc((3 + 1) * sizeof(char));
+    sprintf((char *)quantity_dropdown[i], "%d", i + 1);
   }
-
+  quantity_dropdown[quantity] = NULL;
 
   node *n = malloc(sizeof(node));
   n->barcode = scan;
   n->brand = brand;
   n->name = name;  
   n->type = type;
+  n->id = id;
   n->scan_label = gtk_label_new(label);
   n->quantity_dropdown = quantity_dropdown;
   n->scan_dropdown = gtk_drop_down_new_from_strings(quantity_dropdown);
@@ -458,18 +597,18 @@ static void add_scan(GtkWidget *widget, gpointer data)
 
   gtk_drop_down_set_selected(GTK_DROP_DOWN(n->scan_dropdown), 0);
   gtk_grid_attach_next_to(GTK_GRID(scanner_grid), n->scan_dropdown, n->scan_label, GTK_POS_RIGHT, 1, 1);
-  g_signal_connect(n->scan_dropdown, "activate", G_CALLBACK(print_lol), NULL);
   gtk_widget_set_halign (n->scan_dropdown, GTK_ALIGN_START);
   gtk_widget_set_valign (n->scan_dropdown, GTK_ALIGN_START);
   gtk_widget_set_margin_end(n->scan_dropdown, 15);
   gtk_widget_set_margin_start(n->scan_dropdown, 15);
+  g_signal_connect(n->scan_dropdown, "notify::selected", G_CALLBACK(calc_total_price), NULL);
 
   gtk_grid_attach_next_to(GTK_GRID(scanner_grid), n->scan_remove, n->scan_dropdown, GTK_POS_RIGHT, 1, 1);
   gtk_widget_set_valign (n->scan_remove, GTK_ALIGN_CENTER);
   gtk_widget_set_halign (n->scan_remove, GTK_ALIGN_CENTER);
   g_signal_connect(n->scan_remove, "clicked", G_CALLBACK(remove_scan), NULL);
 
-  total_price();
+  calc_total_price();
 }
 
 static void activate (GtkApplication *app, gpointer user_data)
@@ -490,6 +629,11 @@ static void activate (GtkApplication *app, gpointer user_data)
   GtkWidget *button;
   GtkWidget *button2;
   GtkWidget *button3;
+
+  GtkCssProvider *css_provider = gtk_css_provider_new();
+  GFile *css_file = g_file_new_for_path("inventory.css"); 
+  gtk_css_provider_load_from_file(css_provider, css_file);
+  gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(css_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
   window = gtk_application_window_new (app);
   gtk_window_set_title (GTK_WINDOW (window), "Window");
