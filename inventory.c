@@ -298,9 +298,11 @@ static void sql_sell_update_products(const char *id, int quantity){
 }
 
 static void receipt_print(struct tm *date){
-  char receipt[1000];
+  char receipt[2000];
   sprintf(receipt, 
-    "\tCabellos risos\n" 
+    "\tDistribuidora Cabellos risos\n" 
+    "Nit: 39549232\n" 
+    "Calle 70c #70-06" 
     "--------------------------\n" 
     "Fecha: %d-%d-%d\n"
     "Hora: %d:%d\n"  
@@ -611,6 +613,13 @@ static void add_scan(GtkWidget *widget, gpointer data)
   calc_total_price();
 }
 
+static void inventory_product_window_new(GtkWidget *window){
+  window = gtk_window_new(); 
+  gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
+  gtk_window_set_default_size (GTK_WINDOW (window), 800, 800);
+  gtk_window_present (GTK_WINDOW(window));
+}
+
 static void activate (GtkApplication *app, gpointer user_data)
 {
 
@@ -619,16 +628,20 @@ static void activate (GtkApplication *app, gpointer user_data)
   GtkWidget *stack;
   GtkWidget *stack_switcher;
   GtkWidget *separator;
+  GtkWidget *scanner_stack_box;
   GtkWidget *scanner_frame;
   GtkWidget *scanner_entry;
   GtkEntryBuffer *scanner_entry_buffer;
   GtkWidget *submit_button;
   GtkWidget *cancel_button;
+
+  GtkWidget *inventory_stack_box;
   GtkWidget *inventory_frame;
   GtkWidget *inventory_scroll;
-  GtkWidget *button;
-  GtkWidget *button2;
-  GtkWidget *button3;
+  GtkWidget *inventory_entry;
+  GtkEntryBuffer *inventory_entry_buffer;
+
+  GtkWidget *inventory_product_window;
 
   GtkCssProvider *css_provider = gtk_css_provider_new();
   GFile *css_file = g_file_new_for_path("inventory.css"); 
@@ -654,16 +667,11 @@ static void activate (GtkApplication *app, gpointer user_data)
   gtk_widget_set_vexpand(scanner_grid, TRUE);
   gtk_grid_set_row_spacing(GTK_GRID(scanner_grid), 10);
 
-  scanner_frame = gtk_frame_new(NULL);
-  gtk_frame_set_child(GTK_FRAME(scanner_frame), scanner_grid);
-  gtk_stack_add_titled(GTK_STACK(stack), scanner_frame, "scanner", "Scanner");
-  gtk_widget_set_margin_top(scanner_frame, 15);
-  gtk_widget_set_margin_bottom(scanner_frame, 15);
-  gtk_widget_set_margin_start(scanner_frame, 15);
-  gtk_widget_set_margin_end(scanner_frame, 15);
+  scanner_stack_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+  gtk_stack_add_titled(GTK_STACK(stack), scanner_stack_box, "scanner", "Scanner");
 
   scanner_entry = gtk_entry_new();
-  gtk_grid_attach(GTK_GRID(grid), scanner_entry, 1, 2, 1, 1);
+  gtk_box_append(GTK_BOX(scanner_stack_box), scanner_entry);
   g_signal_connect(scanner_entry, "activate", G_CALLBACK(add_scan), NULL);
   gtk_widget_set_halign (scanner_entry, GTK_ALIGN_CENTER);
   gtk_widget_set_valign (scanner_entry, GTK_ALIGN_CENTER);
@@ -672,7 +680,15 @@ static void activate (GtkApplication *app, gpointer user_data)
   gtk_widget_grab_focus(scanner_entry);
 
   scanner_entry_buffer = gtk_entry_get_buffer(GTK_ENTRY(scanner_entry));
-  scanner_entry_buffer = gtk_entry_get_buffer(GTK_ENTRY(scanner_entry));
+
+  scanner_frame = gtk_frame_new(NULL);
+  gtk_box_append(GTK_BOX(scanner_stack_box), scanner_frame); 
+  gtk_frame_set_child(GTK_FRAME(scanner_frame), scanner_grid);
+  gtk_widget_set_margin_top(scanner_frame, 15);
+  gtk_widget_set_margin_bottom(scanner_frame, 15);
+  gtk_widget_set_margin_start(scanner_frame, 15);
+  gtk_widget_set_margin_end(scanner_frame, 15);
+
 
   separator = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
 
@@ -687,13 +703,26 @@ static void activate (GtkApplication *app, gpointer user_data)
   inventory_scroll = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(inventory_scroll), inventory_box);
 
+  inventory_stack_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+  gtk_stack_add_titled(GTK_STACK(stack), inventory_stack_box, "inventory", "Inventario");
+  gtk_widget_set_vexpand(inventory_stack_box, TRUE);
+
+  inventory_entry = gtk_entry_new();
+  gtk_box_append(GTK_BOX(inventory_stack_box), inventory_entry);
+  g_signal_connect_swapped(inventory_entry, "activate", G_CALLBACK(inventory_product_window_new), inventory_product_window);
+  gtk_widget_set_halign (inventory_entry, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign (inventory_entry, GTK_ALIGN_CENTER);
+  gtk_widget_set_hexpand(inventory_entry, TRUE);
+  gtk_widget_set_margin_top(inventory_entry, 15);
+
   inventory_frame = gtk_frame_new(NULL);
-  gtk_stack_add_titled(GTK_STACK(stack), inventory_frame, "inventory", "Inventario");
+  gtk_box_append(GTK_BOX(inventory_stack_box), inventory_frame);
   gtk_frame_set_child(GTK_FRAME(inventory_frame), inventory_scroll);
   gtk_widget_set_margin_top(inventory_frame, 15);
   gtk_widget_set_margin_bottom(inventory_frame, 15);
   gtk_widget_set_margin_start(inventory_frame, 15);
   gtk_widget_set_margin_end(inventory_frame, 15);
+  gtk_widget_set_vexpand(inventory_frame, TRUE);
 
   submit_button = gtk_button_new_with_label("     OK     ");
   gtk_grid_attach(GTK_GRID(scanner_grid), submit_button, 15, 100, 1, 1);
