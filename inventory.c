@@ -662,6 +662,7 @@ static void activate (GtkApplication *app, gpointer user_data)
   gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(stack_switcher), GTK_STACK(stack));
   gtk_grid_attach(GTK_GRID(grid), stack_switcher, 1, 1, 1, 1);
 
+
   scanner_grid = gtk_grid_new();
   gtk_widget_set_hexpand(scanner_grid, TRUE);
   gtk_widget_set_vexpand(scanner_grid, TRUE);
