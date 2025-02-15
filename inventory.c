@@ -33,12 +33,14 @@ typedef struct node{
 node *scanner_list = NULL;
 GtkWidget *scanner_grid;
 GtkWidget *price_total;
+GtkWidget *scanner_entry;
 char *price_total_default = "Total: $";
 int scanner_list_n_of_products = 0;
 int total_price = 0;
 
 GtkWidget *inventory_grid;
 GtkWidget *inventory_box;
+GtkWidget *floating_window_grid;
 
 sqlite3 *db;
 const char *errMsg = 0;
@@ -300,9 +302,9 @@ static void sql_sell_update_products(const char *id, int quantity){
 static void receipt_print(struct tm *date){
   char receipt[2000];
   sprintf(receipt, 
-    "\tDistribuidora Cabellos risos\n" 
-    "Nit: 39549232\n" 
-    "Calle 70c #70-06" 
+    "Distribuidora Cabellos risos\n" 
+    "Nit: 39549232-1\n" 
+    "Calle 70c #70-06\n" 
     "--------------------------\n" 
     "Fecha: %d-%d-%d\n"
     "Hora: %d:%d\n"  
@@ -311,7 +313,7 @@ static void receipt_print(struct tm *date){
 
   for (node *ptr = scanner_list; ptr != NULL; ptr = ptr->next) {
     sprintf(receipt + strlen(receipt),     
-      "%s %s\n%s(%d): $%d\n", ptr->type, ptr->brand, ptr->name, ptr->quantity_sold, ptr->total
+      "%s %s\n%s\n(%d): $%d\n", ptr->type, ptr->brand, ptr->name, ptr->quantity_sold, ptr->total
     );
   }
 
@@ -428,6 +430,9 @@ static void sql_sell_insert_sales_items(const char *product_id, int sale_id, int
 }
 
 static void sql_sell(GtkWidget *widget, gpointer data){
+  if (total_price == 0) {
+    return; 
+  }
   struct tm *cur_time = current_time();
   int sales_id = sql_sell_insert_sales(cur_time);
   for (node *ptr = scanner_list; ptr != NULL; ptr = ptr->next) {
@@ -604,25 +609,94 @@ static void add_scan(GtkWidget *widget, gpointer data)
   gtk_widget_set_margin_end(n->scan_dropdown, 15);
   gtk_widget_set_margin_start(n->scan_dropdown, 15);
   g_signal_connect(n->scan_dropdown, "notify::selected", G_CALLBACK(calc_total_price), NULL);
-
+  g_signal_connect_swapped(n->scan_dropdown, "notify::selected", G_CALLBACK(gtk_widget_grab_focus), scanner_entry);
   gtk_grid_attach_next_to(GTK_GRID(scanner_grid), n->scan_remove, n->scan_dropdown, GTK_POS_RIGHT, 1, 1);
   gtk_widget_set_valign (n->scan_remove, GTK_ALIGN_CENTER);
   gtk_widget_set_halign (n->scan_remove, GTK_ALIGN_CENTER);
   g_signal_connect(n->scan_remove, "clicked", G_CALLBACK(remove_scan), NULL);
+  g_signal_connect_swapped(n->scan_remove, "clicked", G_CALLBACK(gtk_widget_grab_focus), scanner_entry);
 
   calc_total_price();
 }
 
-static void inventory_product_window_new(GtkWidget *window){
+static void floating_window_new(GtkWidget *window){
   window = gtk_window_new(); 
   gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
-  gtk_window_set_default_size (GTK_WINDOW (window), 800, 800);
+  gtk_window_set_default_size (GTK_WINDOW (window), 400, 400);
+
+  GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+  gtk_window_set_child(GTK_WINDOW(window), box);
+
+  GtkWidget *frame = gtk_frame_new(NULL);
+  gtk_box_append(GTK_BOX(box), frame);
+  gtk_widget_set_margin_top(frame, 15);
+  gtk_widget_set_margin_bottom(frame, 15);
+  gtk_widget_set_margin_start(frame, 15);
+  gtk_widget_set_margin_end(frame, 15);
+  gtk_widget_set_vexpand(frame, TRUE);
+  gtk_widget_set_hexpand(frame, TRUE);
+
+  floating_window_grid = gtk_grid_new();
+  gtk_frame_set_child(GTK_FRAME(frame), floating_window_grid);
+  gtk_widget_set_margin_start(floating_window_grid, 15);
+  gtk_widget_set_margin_end(floating_window_grid, 15);
+  gtk_widget_set_margin_top(floating_window_grid, 15);
+  gtk_widget_set_margin_bottom(floating_window_grid, 15);
+
+  GtkWidget *buttons_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1);
+  gtk_box_append(GTK_BOX(box), buttons_box);
+
+  GtkWidget *cancel_button = gtk_button_new_with_label("Cancelar");
+  gtk_box_append(GTK_BOX(buttons_box), cancel_button);
+  gtk_widget_set_margin_start(cancel_button, 135);
+  gtk_widget_set_margin_end(cancel_button, 15);
+  gtk_widget_set_margin_bottom(cancel_button, 15);
+  g_signal_connect_swapped(cancel_button, "clicked", G_CALLBACK(gtk_window_destroy), window);
+  g_signal_connect_swapped(cancel_button, "clicked", G_CALLBACK(gtk_widget_grab_focus), scanner_entry);
+
+  GtkWidget *submit_button = gtk_button_new_with_label("   OK   ");
+  gtk_box_append(GTK_BOX(buttons_box), submit_button);
+  gtk_widget_set_margin_end(submit_button, 15);
+  gtk_widget_set_margin_bottom(submit_button, 15);
+  g_signal_connect(submit_button, "clicked", G_CALLBACK(sql_sell), NULL);
+  g_signal_connect_swapped(submit_button, "clicked", G_CALLBACK(free_scanner), scanner_entry);
+  g_signal_connect_swapped(submit_button, "clicked", G_CALLBACK(gtk_widget_grab_focus), scanner_entry);
+  g_signal_connect_swapped(submit_button, "clicked", G_CALLBACK(gtk_window_destroy), window);
+
   gtk_window_present (GTK_WINDOW(window));
 }
 
-static void activate (GtkApplication *app, gpointer user_data)
-{
+static void calc_change(GtkWidget *paid_amount_entry, GtkWidget *change_label){
+  const char *paid_amount = gtk_editable_get_text(GTK_EDITABLE(paid_amount_entry));
+  int change = atoi(paid_amount) - total_price;
+  char change_str[30];
+  sprintf(change_str, "%d", change);
+  gtk_label_set_text(GTK_LABEL(change_label), change_str);
+}
 
+static void floating_window_grid_calc_change(GtkWidget *grid){
+  GtkWidget *total_label_1 = gtk_label_new("Total:");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), total_label_1, 1, 1, 1, 1);
+  char total_price_text[30];
+  sprintf(total_price_text, "$%d", total_price);
+  GtkWidget *total_label_2 = gtk_label_new(total_price_text);
+  gtk_grid_attach(GTK_GRID(floating_window_grid), total_label_2, 2, 1, 1, 1);
+
+  GtkWidget *change_label_1 = gtk_label_new("Devuelta:");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), change_label_1, 1, 3, 1, 1);
+  GtkWidget *change_label_2 = gtk_label_new("");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), change_label_2, 2, 3, 1, 1);
+
+  GtkWidget *paid_amount_label = gtk_label_new("Paga con:");
+  gtk_widget_set_margin_end(paid_amount_label, 15);
+  gtk_grid_attach(GTK_GRID(floating_window_grid), paid_amount_label, 1, 2, 1, 1);
+  GtkWidget *paid_amount_entry = gtk_entry_new();
+  gtk_grid_attach(GTK_GRID(floating_window_grid), paid_amount_entry, 2, 2, 1, 1);
+  g_signal_connect(paid_amount_entry, "changed", G_CALLBACK(calc_change), change_label_2);
+  gtk_widget_grab_focus(paid_amount_entry);
+}
+
+static void activate (GtkApplication *app, gpointer user_data){
   GtkWidget *window;
   GtkWidget *grid;
   GtkWidget *stack;
@@ -630,7 +704,6 @@ static void activate (GtkApplication *app, gpointer user_data)
   GtkWidget *separator;
   GtkWidget *scanner_stack_box;
   GtkWidget *scanner_frame;
-  GtkWidget *scanner_entry;
   GtkEntryBuffer *scanner_entry_buffer;
   GtkWidget *submit_button;
   GtkWidget *cancel_button;
@@ -642,6 +715,7 @@ static void activate (GtkApplication *app, gpointer user_data)
   GtkEntryBuffer *inventory_entry_buffer;
 
   GtkWidget *inventory_product_window;
+  GtkWidget *calc_change_window;
 
   GtkCssProvider *css_provider = gtk_css_provider_new();
   GFile *css_file = g_file_new_for_path("inventory.css"); 
@@ -661,7 +735,6 @@ static void activate (GtkApplication *app, gpointer user_data)
   stack_switcher = gtk_stack_switcher_new();
   gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(stack_switcher), GTK_STACK(stack));
   gtk_grid_attach(GTK_GRID(grid), stack_switcher, 1, 1, 1, 1);
-
 
   scanner_grid = gtk_grid_new();
   gtk_widget_set_hexpand(scanner_grid, TRUE);
@@ -710,7 +783,7 @@ static void activate (GtkApplication *app, gpointer user_data)
 
   inventory_entry = gtk_entry_new();
   gtk_box_append(GTK_BOX(inventory_stack_box), inventory_entry);
-  g_signal_connect_swapped(inventory_entry, "activate", G_CALLBACK(inventory_product_window_new), inventory_product_window);
+  g_signal_connect_swapped(inventory_entry, "activate", G_CALLBACK(floating_window_new), inventory_product_window);
   gtk_widget_set_halign (inventory_entry, GTK_ALIGN_CENTER);
   gtk_widget_set_valign (inventory_entry, GTK_ALIGN_CENTER);
   gtk_widget_set_hexpand(inventory_entry, TRUE);
@@ -727,8 +800,8 @@ static void activate (GtkApplication *app, gpointer user_data)
 
   submit_button = gtk_button_new_with_label("     OK     ");
   gtk_grid_attach(GTK_GRID(scanner_grid), submit_button, 15, 100, 1, 1);
-  g_signal_connect(submit_button, "clicked", G_CALLBACK(sql_sell), NULL);
-  g_signal_connect_swapped(submit_button, "clicked", G_CALLBACK(free_scanner), scanner_entry);
+  g_signal_connect_swapped(submit_button, "clicked", G_CALLBACK(floating_window_new), calc_change_window);
+  g_signal_connect(submit_button, "clicked", G_CALLBACK(floating_window_grid_calc_change), NULL);
   gtk_widget_set_halign (submit_button, GTK_ALIGN_END);
   gtk_widget_set_valign (submit_button, GTK_ALIGN_END);
   gtk_widget_set_vexpand(submit_button, TRUE);
