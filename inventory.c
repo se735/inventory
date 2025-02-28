@@ -34,6 +34,7 @@ node *scanner_list = NULL;
 GtkWidget *scanner_grid;
 GtkWidget *price_total;
 GtkWidget *scanner_entry;
+const char *scanner_entry_text;
 char *price_total_default = "Total: $";
 int scanner_list_n_of_products = 0;
 int total_price = 0;
@@ -86,11 +87,8 @@ static char* sql_query(const char *barcode, const char *sql){
 }
 
 static void update_inventory(GtkWidget* widget, char *type){
-  char *query_template = "UPDATE products set";
-  GtkWidget *parent = gtk_widget_get_parent(widget); 
-  GtkWidget *barcode_child = gtk_widget_get_first_child(parent);
-  const char *barcode = gtk_label_get_text(GTK_LABEL(barcode_child));
   
+  const char *barcode = scanner_entry_text;
   char *query = sqlite3_mprintf("UPDATE products set %s = ? WHERE barcode = ?", type);
 
   rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL); 
@@ -674,7 +672,7 @@ static void calc_change(GtkWidget *paid_amount_entry, GtkWidget *change_label){
   gtk_label_set_text(GTK_LABEL(change_label), change_str);
 }
 
-static void floating_window_grid_calc_change(GtkWidget *grid){
+static void floating_window_grid_calc_change(void){
   GtkWidget *total_label_1 = gtk_label_new("Total:");
   gtk_grid_attach(GTK_GRID(floating_window_grid), total_label_1, 1, 1, 1, 1);
   char total_price_text[30];
@@ -694,6 +692,47 @@ static void floating_window_grid_calc_change(GtkWidget *grid){
   gtk_grid_attach(GTK_GRID(floating_window_grid), paid_amount_entry, 2, 2, 1, 1);
   g_signal_connect(paid_amount_entry, "changed", G_CALLBACK(calc_change), change_label_2);
   gtk_widget_grab_focus(paid_amount_entry);
+}
+
+static void floating_window_grid_edit_inventory(GtkWidget *scanner_entry){
+  GtkEntryBuffer *scanner_entry_buffer = gtk_entry_get_buffer(GTK_ENTRY(scanner_entry)); 
+  scanner_entry_text = gtk_entry_buffer_get_text(scanner_entry_buffer);
+
+  GtkWidget *barcode_label = gtk_label_new("Codigo:");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), barcode_label, 1, 1, 1, 1);
+  GtkWidget *barcode_editable = gtk_editable_label_new(scanner_entry_text);
+  gtk_grid_attach(GTK_GRID(floating_window_grid), barcode_editable, 2, 1, 1, 1);
+  g_signal_connect(barcode_editable, "changed", G_CALLBACK(update_inventory), "barcode");
+
+  GtkWidget *type_label = gtk_label_new("Tipo:");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), type_label, 1, 2, 1, 1);
+  GtkWidget *type_editable = gtk_editable_label_new(sql_query(scanner_entry_text, "type"));
+  gtk_grid_attach(GTK_GRID(floating_window_grid), type_editable, 2, 2, 1, 1);
+  g_signal_connect(type_editable, "changed", G_CALLBACK(update_inventory), "type");
+
+  GtkWidget *brand_label = gtk_label_new("Marca:");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), brand_label, 1, 3, 1, 1);
+  GtkWidget *brand_editable = gtk_editable_label_new(sql_query(scanner_entry_text, "brand"));
+  gtk_grid_attach(GTK_GRID(floating_window_grid), brand_editable, 2, 3, 1, 1);
+  g_signal_connect(brand_editable, "changed", G_CALLBACK(update_inventory), "brand");
+
+  GtkWidget *name_label = gtk_label_new("Nombre:");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), name_label, 1, 4, 1, 1);
+  GtkWidget *name_editable = gtk_editable_label_new(sql_query(scanner_entry_text, "name"));
+  gtk_grid_attach(GTK_GRID(floating_window_grid), name_editable, 2, 4, 1, 1);
+  g_signal_connect(name_editable, "changed", G_CALLBACK(update_inventory), "name");
+
+  GtkWidget *price_label = gtk_label_new("Precio");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), price_label, 1, 5, 1, 1);
+  GtkWidget *price_editable = gtk_editable_label_new(sql_query(scanner_entry_text, "price"));
+  gtk_grid_attach(GTK_GRID(floating_window_grid), price_editable, 2, 5, 1, 1);
+  g_signal_connect(price_editable, "changed", G_CALLBACK(update_inventory), "price");
+
+  GtkWidget *quantity_label = gtk_label_new("Cantidad:");
+  gtk_grid_attach(GTK_GRID(floating_window_grid), quantity_label, 1, 6, 1, 1);
+  GtkWidget *quantity_editable = gtk_editable_label_new(sql_query(scanner_entry_text, "quantity"));
+  gtk_grid_attach(GTK_GRID(floating_window_grid), quantity_editable, 2, 6, 1, 1);
+  g_signal_connect(quantity_editable, "changed", G_CALLBACK(update_inventory), "quantity");
 }
 
 static void activate (GtkApplication *app, gpointer user_data){
@@ -784,6 +823,8 @@ static void activate (GtkApplication *app, gpointer user_data){
   inventory_entry = gtk_entry_new();
   gtk_box_append(GTK_BOX(inventory_stack_box), inventory_entry);
   g_signal_connect_swapped(inventory_entry, "activate", G_CALLBACK(floating_window_new), inventory_product_window);
+  g_signal_connect(inventory_entry, "activate", G_CALLBACK(floating_window_grid_edit_inventory), NULL);
+
   gtk_widget_set_halign (inventory_entry, GTK_ALIGN_CENTER);
   gtk_widget_set_valign (inventory_entry, GTK_ALIGN_CENTER);
   gtk_widget_set_hexpand(inventory_entry, TRUE);
