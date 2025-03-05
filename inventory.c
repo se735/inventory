@@ -35,6 +35,7 @@ GtkWidget *scanner_grid;
 GtkWidget *price_total;
 GtkWidget *scanner_entry;
 const char *scanner_entry_text;
+const char *inventory_entry_text;
 char *price_total_default = "Total: $";
 int scanner_list_n_of_products = 0;
 int total_price = 0;
@@ -91,7 +92,7 @@ static char* sql_query(const char *barcode, const char *sql){
 
 static void update_inventory(GtkWidget* widget, char *type){
   
-  const char *barcode = scanner_entry_text;
+  const char *barcode = inventory_entry_text;
   char *query = sqlite3_mprintf("UPDATE products set %s = ? WHERE barcode = ?", type);
 
   rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL); 
@@ -727,11 +728,11 @@ static void insert_new_product(const char *barcode){
 
 static void floating_window_grid_edit_inventory(GtkWidget *inventory_entry){
   GtkEntryBuffer *inventory_entry_buffer = gtk_entry_get_buffer(GTK_ENTRY(inventory_entry)); 
-  const char *inventory_entry_text = gtk_entry_buffer_get_text(inventory_entry_buffer);
+  inventory_entry_text = gtk_entry_buffer_get_text(inventory_entry_buffer);
 
   GtkWidget *barcode_label = gtk_label_new("Codigo:");
   gtk_grid_attach(GTK_GRID(floating_window_grid), barcode_label, 1, 1, 1, 1);
-  GtkWidget *barcode_editable = gtk_editable_label_new(scanner_entry_text);
+  GtkWidget *barcode_editable = gtk_editable_label_new(inventory_entry_text);
   gtk_grid_attach(GTK_GRID(floating_window_grid), barcode_editable, 2, 1, 1, 1);
 
   GtkWidget *type_label = gtk_label_new("Tipo:");
@@ -759,7 +760,7 @@ static void floating_window_grid_edit_inventory(GtkWidget *inventory_entry){
   GtkWidget *quantity_editable = gtk_editable_label_new("");
   gtk_grid_attach(GTK_GRID(floating_window_grid), quantity_editable, 2, 6, 1, 1);
 
-  if (sql_query(scanner_entry_text, "barcode") == NULL) {
+  if (sql_query(inventory_entry_text, "barcode") == NULL) {
     insert_new_product(inventory_entry_text);
   }
 
