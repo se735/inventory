@@ -47,11 +47,15 @@ GtkWidget *floating_window_grid;
 GtkWidget *floating_window_cancel_button;
 GtkWidget *floating_window_submit_button;
 
+GtkWidget *history_box;
+GtkWidget *history_calendar;
+
 sqlite3 *db;
 const char *errMsg = 0;
 sqlite3_stmt *stmt;
 int rc; 
 
+static void history_query();
 
 static char* sql_query(const char *barcode, const char *sql){
   char *query = sqlite3_mprintf("SELECT %s FROM products WHERE barcode = ?", sql);
@@ -451,6 +455,7 @@ static void sql_sell(GtkWidget *widget, gpointer data){
   }
   receipt_print(cur_time);
   gtk_label_set_text(GTK_LABEL(price_total), "Total: ");
+  history_query();
 }
 
 static void print_dropdown(GtkWidget *widget, gpointer data){
@@ -782,6 +787,79 @@ static void floating_window_grid_edit_inventory(GtkWidget *inventory_entry){
   g_signal_connect(quantity_editable, "changed", G_CALLBACK(update_inventory), "quantity");
 }
 
+static void history_query(){
+  if (history_box == NULL) {
+    return; 
+  }
+
+  GtkWidget *child = gtk_widget_get_first_child(history_box);
+
+  while (child != NULL) {
+    GtkWidget *next = gtk_widget_get_next_sibling(child);
+    gtk_box_remove(GTK_BOX(history_box), child); 
+    child = next;
+  }
+  
+  char *query = "SELECT time, total_price FROM sales WHERE day = ? AND month = ? AND year = ? ORDER BY id";
+
+  rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
+    return;
+  }
+
+  rc = sqlite3_bind_int(stmt, 1, gtk_calendar_get_day(GTK_CALENDAR(history_calendar)));
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc = sqlite3_bind_int(stmt, 2, gtk_calendar_get_month(GTK_CALENDAR(history_calendar)) + 1);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc = sqlite3_bind_int(stmt, 3, gtk_calendar_get_year(GTK_CALENDAR(history_calendar)));
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  char *time;
+  char *total_price;
+
+  int total_sold_today = 0;
+
+  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+    const char *col_time = (const char*)sqlite3_column_text(stmt, 0);
+    size_t time_length = strlen(col_time); 
+    time = (char *)malloc(( time_length * sizeof(char) ) + 1);
+    strcpy(time, col_time);
+    GtkWidget *time_expander = gtk_expander_new_with_mnemonic(time);
+    gtk_box_append(GTK_BOX(history_box), time_expander);
+
+    const char *col_total_price = (const char*)sqlite3_column_text(stmt, 1);
+    char total_price[30];
+    sprintf(total_price, "$%s", col_total_price);
+    GtkWidget *total_price_expander = gtk_expander_new_with_mnemonic(total_price);
+    gtk_expander_set_child(GTK_EXPANDER(time_expander), total_price_expander);
+
+    total_sold_today += atoi(col_total_price);
+  }
+
+  if (rc != SQLITE_DONE) {
+    fprintf(stderr, "Failed to update data: %s\n", sqlite3_errmsg(db)); 
+  }
+  else {
+    printf("Update succesfully\n");
+  }
+
+  char total_sold_today_str[40];
+  sprintf(total_sold_today_str, "Total diario: $%d", total_sold_today);
+  GtkWidget *total_sold_today_label = gtk_label_new(total_sold_today_str);
+  gtk_box_append(GTK_BOX(history_box), total_sold_today_label);
+
+  sqlite3_finalize(stmt);
+}
+
 static void activate (GtkApplication *app, gpointer user_data){
   GtkWidget *window;
   GtkWidget *grid;
@@ -802,6 +880,10 @@ static void activate (GtkApplication *app, gpointer user_data){
 
   GtkWidget *inventory_product_window;
   GtkWidget *calc_change_window;
+
+  GtkWidget *history_stack_box;
+  GtkWidget *history_calendar_frame;
+  GtkWidget *history_frame;
 
   GtkCssProvider *css_provider = gtk_css_provider_new();
   GFile *css_file = g_file_new_for_path("inventory.css"); 
@@ -886,6 +968,27 @@ static void activate (GtkApplication *app, gpointer user_data){
   gtk_widget_set_margin_end(inventory_frame, 15);
   gtk_widget_set_vexpand(inventory_frame, TRUE);
 
+  history_stack_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1);
+  gtk_stack_add_titled(GTK_STACK(stack), history_stack_box, "history", "Historial");
+
+  history_calendar = gtk_calendar_new();
+  gtk_box_append(GTK_BOX(history_stack_box), history_calendar);
+  gtk_widget_set_margin_top(history_calendar, 15);
+  gtk_widget_set_margin_bottom(history_calendar, 15);
+  g_signal_connect(history_calendar, "day-selected", G_CALLBACK(history_query), NULL);
+
+  history_frame = gtk_frame_new(NULL);
+  gtk_box_append(GTK_BOX(history_stack_box), history_frame);
+  gtk_widget_set_margin_top(history_frame, 15);
+  gtk_widget_set_margin_bottom(history_frame, 15);
+  gtk_widget_set_margin_start(history_frame, 15);
+  gtk_widget_set_margin_end(history_frame, 15);
+  gtk_widget_set_vexpand(history_frame, TRUE);
+  gtk_widget_set_hexpand(history_frame, TRUE);
+
+  history_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+  gtk_frame_set_child(GTK_FRAME(history_frame), history_box);
+
   submit_button = gtk_button_new_with_label("     OK     ");
   gtk_grid_attach(GTK_GRID(scanner_grid), submit_button, 15, 100, 1, 1);
   g_signal_connect_swapped(submit_button, "clicked", G_CALLBACK(floating_window_new), calc_change_window);
@@ -917,8 +1020,8 @@ static void activate (GtkApplication *app, gpointer user_data){
   gtk_widget_set_margin_bottom(price_total, 23);
   gtk_widget_set_margin_end(price_total, 15);
 
-  sql_query_example();
   sql_inventory();
+  history_query();
   gtk_window_present (GTK_WINDOW (window));
 }
 
