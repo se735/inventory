@@ -888,19 +888,14 @@ static void history_query(){
 
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     const char *col_time = (const char*)sqlite3_column_text(stmt, 0);
-    size_t time_length = strlen(col_time); 
-    time = (char *)malloc(( time_length * sizeof(char) ) + 1);
-    strcpy(time, col_time);
-    GtkWidget *time_expander = gtk_expander_new_with_mnemonic(time);
-    gtk_box_append(GTK_BOX(history_box), time_expander);
-
     const char *col_total_price = (const char*)sqlite3_column_text(stmt, 1);
-    char total_price[30];
-    sprintf(total_price, "$%s", col_total_price);
-    GtkWidget *total_price_expander = gtk_expander_new_with_mnemonic(total_price);
-    gtk_expander_set_child(GTK_EXPANDER(time_expander), total_price_expander);
+    char history_sale[50];
+    sprintf(history_sale, "$%s - %s", col_total_price, col_time);
+    GtkWidget *history_expander = gtk_expander_new_with_mnemonic(history_sale);
+    gtk_box_append(GTK_BOX(history_box), history_expander);
+
     int col_id = sqlite3_column_int(stmt, 2);
-    history_query_sale_items(total_price_expander, col_id);
+    history_query_sale_items(history_expander, col_id);
 
     total_sold_today += atoi(col_total_price);
   }
