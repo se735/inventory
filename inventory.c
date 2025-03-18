@@ -787,6 +787,64 @@ static void floating_window_grid_edit_inventory(GtkWidget *inventory_entry){
   g_signal_connect(quantity_editable, "changed", G_CALLBACK(update_inventory), "quantity");
 }
 
+static void history_query_sale_items(GtkWidget *expander, int id){
+
+  char *query = "SELECT products.type, products.brand, products.name, sales_items.quantity, products.price FROM ((products JOIN sales_items ON products.id = sales_items.product_id) JOIN sales ON sales_items.sale_id = sales.id) WHERE sales.day = ? AND sales.month = ? AND sales.year = ? AND sales.id = ?";
+
+  int rc_2;
+  sqlite3_stmt *stmt_2;
+  rc_2 = sqlite3_prepare_v2(db, query, -1, &stmt_2, NULL);
+  if (rc_2 != SQLITE_OK) {
+    fprintf(stderr, "Error preparing statement: %s\n", sqlite3_errmsg(db));
+    return;
+  }
+
+  rc_2 = sqlite3_bind_int(stmt_2, 1, gtk_calendar_get_day(GTK_CALENDAR(history_calendar)));
+  if (rc_2 != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc_2 = sqlite3_bind_int(stmt_2, 2, gtk_calendar_get_month(GTK_CALENDAR(history_calendar)) + 1);
+  if (rc_2 != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc_2 = sqlite3_bind_int(stmt_2, 3, gtk_calendar_get_year(GTK_CALENDAR(history_calendar)));
+  if (rc_2 != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  rc_2 = sqlite3_bind_int(stmt_2, 4, id);
+  if (rc_2 != SQLITE_OK) {
+    fprintf(stderr, "Failed to bind: %s\n", sqlite3_errmsg(db)); 
+  }
+
+  GtkWidget *item_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+  g_print("we goood\n");
+  gtk_expander_set_child(GTK_EXPANDER(expander), item_box);
+  while ((rc_2 = sqlite3_step(stmt_2)) == SQLITE_ROW) {
+    const char *col_type = (const char*)sqlite3_column_text(stmt_2, 0);
+    const char *col_brand = (const char*)sqlite3_column_text(stmt_2, 1);
+    const char *col_name = (const char*)sqlite3_column_text(stmt_2, 2);
+    const char *col_quantity = (const char*)sqlite3_column_text(stmt_2, 3);
+    const char *col_price = (const char*)sqlite3_column_text(stmt_2, 4);
+    char full_item_name[100];
+    sprintf(full_item_name, "%s %s %s x %s = %s", col_type, col_brand, col_name, col_quantity, col_price);
+    GtkWidget *sold_item = gtk_label_new(full_item_name);
+    gtk_box_append(GTK_BOX(item_box), sold_item);
+  }
+
+  if (rc_2 != SQLITE_DONE) {
+    fprintf(stderr, "Failed to update data: %s\n", sqlite3_errmsg(db)); 
+  }
+  else {
+    printf("Update succesfully\n");
+  }
+
+  sqlite3_finalize(stmt_2);
+}
+
+
 static void history_query(){
   if (history_box == NULL) {
     return; 
@@ -800,7 +858,7 @@ static void history_query(){
     child = next;
   }
   
-  char *query = "SELECT time, total_price FROM sales WHERE day = ? AND month = ? AND year = ? ORDER BY id";
+  char *query = "SELECT time, total_price, id FROM sales WHERE day = ? AND month = ? AND year = ? ORDER BY id";
 
   rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
@@ -841,6 +899,8 @@ static void history_query(){
     sprintf(total_price, "$%s", col_total_price);
     GtkWidget *total_price_expander = gtk_expander_new_with_mnemonic(total_price);
     gtk_expander_set_child(GTK_EXPANDER(time_expander), total_price_expander);
+    int col_id = sqlite3_column_int(stmt, 2);
+    history_query_sale_items(total_price_expander, col_id);
 
     total_sold_today += atoi(col_total_price);
   }
