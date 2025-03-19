@@ -940,6 +940,9 @@ static void activate (GtkApplication *app, gpointer user_data){
   GtkWidget *history_calendar_frame;
   GtkWidget *history_frame;
 
+  GtkWidget *frame_box;
+  GtkWidget *buttons_box;
+
   GtkCssProvider *css_provider = gtk_css_provider_new();
   GFile *css_file = g_file_new_for_path("inventory.css"); 
   gtk_css_provider_load_from_file(css_provider, css_file);
@@ -978,13 +981,16 @@ static void activate (GtkApplication *app, gpointer user_data){
 
   scanner_entry_buffer = gtk_entry_get_buffer(GTK_ENTRY(scanner_entry));
 
+
+  frame_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
   scanner_frame = gtk_frame_new(NULL);
   gtk_box_append(GTK_BOX(scanner_stack_box), scanner_frame); 
-  gtk_frame_set_child(GTK_FRAME(scanner_frame), scanner_grid);
+  gtk_frame_set_child(GTK_FRAME(scanner_frame), frame_box);
   gtk_widget_set_margin_top(scanner_frame, 15);
   gtk_widget_set_margin_bottom(scanner_frame, 15);
   gtk_widget_set_margin_start(scanner_frame, 15);
   gtk_widget_set_margin_end(scanner_frame, 15);
+  gtk_box_append(GTK_BOX(frame_box), scanner_grid);
 
 
   separator = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
@@ -1044,8 +1050,31 @@ static void activate (GtkApplication *app, gpointer user_data){
   history_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
   gtk_frame_set_child(GTK_FRAME(history_frame), history_box);
 
+  buttons_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1);
+  gtk_box_append(GTK_BOX(frame_box), buttons_box);
+
+  price_total = gtk_label_new("Total: $");
+  gtk_box_append(GTK_BOX(buttons_box), price_total);
+  gtk_widget_set_halign (price_total, GTK_ALIGN_END);
+  gtk_widget_set_valign (price_total, GTK_ALIGN_END);
+  gtk_widget_set_vexpand(price_total, TRUE);
+  gtk_widget_set_hexpand(price_total, TRUE);
+  gtk_widget_set_margin_top(price_total, 15);
+  gtk_widget_set_margin_end(price_total, 15);
+  gtk_widget_set_margin_bottom(price_total, 23);
+
+  cancel_button = gtk_button_new_with_label("Cancelar");
+  gtk_box_append(GTK_BOX(buttons_box), cancel_button);
+  g_signal_connect_swapped(cancel_button, "clicked", G_CALLBACK(free_scanner), scanner_entry);
+  gtk_widget_set_halign (cancel_button, GTK_ALIGN_END);
+  gtk_widget_set_valign (cancel_button, GTK_ALIGN_END);
+  gtk_widget_set_vexpand(cancel_button, TRUE);
+  gtk_widget_set_margin_top(cancel_button, 15);
+  gtk_widget_set_margin_bottom(cancel_button, 15);
+  gtk_widget_set_margin_end(cancel_button, 15);
+
   submit_button = gtk_button_new_with_label("     OK     ");
-  gtk_grid_attach(GTK_GRID(scanner_grid), submit_button, 15, 100, 1, 1);
+  gtk_box_append(GTK_BOX(buttons_box), submit_button);
   g_signal_connect_swapped(submit_button, "clicked", G_CALLBACK(floating_window_new), calc_change_window);
   g_signal_connect(submit_button, "clicked", G_CALLBACK(floating_window_grid_calc_change), NULL);
   gtk_widget_set_halign (submit_button, GTK_ALIGN_END);
@@ -1055,25 +1084,7 @@ static void activate (GtkApplication *app, gpointer user_data){
   gtk_widget_set_margin_bottom(submit_button, 15);
   gtk_widget_set_margin_end(submit_button, 15);
 
-  cancel_button = gtk_button_new_with_label("Cancelar");
-  gtk_grid_attach_next_to(GTK_GRID(scanner_grid), cancel_button, submit_button, GTK_POS_LEFT, 1, 1);
-  g_signal_connect_swapped(cancel_button, "clicked", G_CALLBACK(free_scanner), scanner_entry);
-  gtk_widget_set_halign (cancel_button, GTK_ALIGN_END);
-  gtk_widget_set_valign (cancel_button, GTK_ALIGN_END);
-  gtk_widget_set_vexpand(cancel_button, TRUE);
-  gtk_widget_set_margin_top(cancel_button, 15);
-  gtk_widget_set_margin_bottom(cancel_button, 15);
-  gtk_widget_set_margin_end(cancel_button, 15);
 
-  price_total = gtk_label_new("Total: $");
-  gtk_grid_attach_next_to(GTK_GRID(scanner_grid), price_total, cancel_button, GTK_POS_LEFT, 1, 1);
-  gtk_widget_set_halign (price_total, GTK_ALIGN_END);
-  gtk_widget_set_valign (price_total, GTK_ALIGN_END);
-  gtk_widget_set_vexpand(price_total, TRUE);
-  gtk_widget_set_hexpand(price_total, TRUE);
-  gtk_widget_set_margin_top(price_total, 15);
-  gtk_widget_set_margin_bottom(price_total, 23);
-  gtk_widget_set_margin_end(price_total, 15);
 
   sql_inventory();
   history_query();
