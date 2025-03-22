@@ -939,6 +939,7 @@ static void activate (GtkApplication *app, gpointer user_data){
   GtkWidget *history_stack_box;
   GtkWidget *history_calendar_frame;
   GtkWidget *history_frame;
+  GtkWidget *history_scrolled;
 
   GtkWidget *frame_box;
   GtkWidget *buttons_box;
@@ -1047,8 +1048,11 @@ static void activate (GtkApplication *app, gpointer user_data){
   gtk_widget_set_vexpand(history_frame, TRUE);
   gtk_widget_set_hexpand(history_frame, TRUE);
 
+  history_scrolled = gtk_scrolled_window_new();
+  gtk_frame_set_child(GTK_FRAME(history_frame), history_scrolled);
+
   history_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
-  gtk_frame_set_child(GTK_FRAME(history_frame), history_box);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(history_scrolled), history_box);
 
   buttons_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1);
   gtk_box_append(GTK_BOX(frame_box), buttons_box);
